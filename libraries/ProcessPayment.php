@@ -49,7 +49,7 @@ class ProcessPayment
      *
      * @var string External Id, can only be one per gateway
      */
-	 
+     
     private $customer_external_entity_id;
 
     function __construct($params = null)
@@ -61,7 +61,7 @@ class ProcessPayment
         $this->ci->load->model("Card_model");
 
         $this->ci->load->library('encrypt');
-		
+        
         $this->ci->load->model('Booking_model');
         $this->ci->load->model('company_model');          
         $this->ci->load->model('Channex_model');          
@@ -71,7 +71,7 @@ class ProcessPayment
         if (isset($params['company_id'])) {
             $company_id = $params['company_id'];
         }
-		
+        
         $this->cielo_url = ($this->ci->config->item('app_environment') == "development") ? "https://apisandbox.cieloecommerce.cielo.com.br" : "https://api.cieloecommerce.cielo.com.br";
 
         $gateway_settings = $this->ci->Payment_gateway_model->get_payment_gateway_settings(
@@ -90,12 +90,12 @@ class ProcessPayment
     private function populateGatewaySettings()
     {
         switch ($this->selected_gateway) {
-            case 'asaas':
+            case 'cielo':
                 $gateway_meta_data = json_decode($this->company_gateway_settings['gateway_meta_data'], true);
-                $this->asaas_api_key = $gateway_meta_data['asaas_api_key'];
-                $this->asaas_cpf_cnpj = isset($gateway_meta_data['cpf_cnpj']) && $gateway_meta_data['cpf_cnpj'] ? $gateway_meta_data['cpf_cnpj'] : null;
-                if($this->asaas_api_key)
-                    Client::connect($this->asaas_api_key, $this->asaas_env);
+                $this->cielo_merchant_id = $gateway_meta_data['cielo_merchant_id'];
+                $this->cielo_merchant_key = $gateway_meta_data['cielo_merchant_key'];
+                // if($this->asaas_api_key)
+                //     Client::connect($this->asaas_api_key, $this->asaas_env);
                 break;
         }
     }
@@ -106,73 +106,6 @@ class ProcessPayment
         $this->ci->load->model('Currency_model');
         $currency       = $this->ci->Currency_model->get_default_currency($this->company_gateway_settings['company_id']);
         $this->currency = strtolower($currency['currency_code']);
-    }
-
-    public static function getGatewayNames()
-    {
-        return array(
-            'stripe' => 'Stripe'
-        );
-    }
-
-    /**
-     * @return int
-     */
-    public function getStripeToken()
-    {
-        return $this->stripe_token;
-    }
-
-    /**
-     * @param $token
-     */
-    public function setCCToken($token)
-    {
-        switch ($this->selected_gateway) {
-            case 'stripe':
-                $this->setStripeToken($token);
-                break;
-        }
-    }
-
-    /**
-     * @param int $stripe_token
-     */
-    private function setStripeToken($stripe_token)
-    {
-        $this->stripe_token = $stripe_token;
-    }
-
-    /**
-     * @return string
-     */
-    public function getStripePrivateKey()
-    {
-        return $this->stripe_private_key;
-    }
-
-    /**
-     * @param string $stripe_private_key
-     */
-    public function setStripePrivateKey($stripe_private_key)
-    {
-        $this->stripe_private_key = $stripe_private_key;
-    }
-
-    /**
-     * @return string
-     */
-    public function getStripePublicKey()
-    {
-        return $this->stripe_public_key;
-    }
-
-    /**
-     * @param string $stripe_public_key
-     */
-    public function setStripePublicKey($stripe_public_key)
-    {
-        $this->stripe_public_key = $stripe_public_key;
     }
 
     /**
@@ -191,60 +124,12 @@ class ProcessPayment
         $this->selected_gateway = $selected_gateway;
     }
 
-    public function createExternalEntity()
-    {
-        $external_id = null;
-
-        switch ($this->selected_gateway) {
-            case 'stripe':
-                $data        = \Stripe\Customer::create(
-                    array(
-                        "description" => json_encode(
-                            array(
-                                'customer_id' => isset($this->customer['customer_id']) ? $this->customer['customer_id'] : 'new_customer',
-                            )
-                        ),
-                        "source"      => $this->stripe_token
-                    )
-                );
-                $external_id = $data->id;
-                break;
-        }
-
-        return $external_id;
-    }
-
     /**
      * @return mixed
      */
     public function getCustomer()
     {
         return $this->customer;
-    }
-
-    /**
-     * @param $customer_id
-     */
-    public function setCustomerById($customer_id)
-    {
-        $customer = $this->ci->Customer_model->get_customer($customer_id);
-        unset($customer['cc_number']);
-        unset($customer['cc_expiry_month']);
-        unset($customer['cc_expiry_year']);
-        unset($customer['cc_tokenex_token']);
-        unset($customer['cc_cvc_encrypted']);
-        
-        $card_data = $this->ci->Card_model->get_active_card($customer_id, $this->ci->company_id);
-            
-        if($card_data){
-            $customer['cc_number'] = $card_data['cc_number'];
-            $customer['cc_expiry_month'] = $card_data['cc_expiry_month'];
-            $customer['cc_expiry_year'] = $card_data['cc_expiry_year'];
-            $customer['cc_tokenex_token'] = $card_data['cc_tokenex_token'];
-            $customer['cc_cvc_encrypted'] = $card_data['cc_cvc_encrypted'];
-        }
-            
-        $this->customer = json_decode(json_encode($customer), 1);
     }
 
     public function getCustomerExternalEntityId()
@@ -386,6 +271,8 @@ class ProcessPayment
         $hasTokenexToken = (isset($customer_meta_data['cielo_token']) and $customer_meta_data['cielo_token']);
 
         if(!$hasTokenexToken) {
+
+            $customer['token'] = $customer_meta_data['token'];
             
             $create_customer_response = $this->create_card_token($customer);
 
@@ -433,6 +320,36 @@ class ProcessPayment
         }
 
         return $result;
+    }
+
+    function create_card_token($customer_data){
+
+        if (function_exists('send_payment_request')) {
+            $api_url = $this->cielo_url;
+            $method = '/1/card/';
+            $method_type = 'POST';
+
+            $data = array(
+                'CustomerName' => $customer_data['customer_name'],
+                'CardNumber' => "%CARD_NUMBER%",
+                'Holder' => "%CARDHOLDER_NAME%",
+                'ExpirationDate' => "%EXPIRATION_MM% / %EXPIRATION_YYYY%",
+                'Brand' => "%EXPIRATION_YYYY%"
+            );
+
+            $headers = array(
+                "MerchantId: " . $this->cielo_merchant_id,
+                "MerchantKey: " . $this->cielo_merchant_key,
+                "Content-Type: application/json"
+            );
+        }
+
+        $response = send_payment_request($api_url . $method, $customer_data['token'], $data, $headers);
+        prx($response);
+        $customer_repsonse = json_decode(json_encode($customerCreated, true), true);
+
+        return array('success' => true, 'customer_id' => $customer_repsonse['id']);
+        
     }
 
     /**
@@ -579,31 +496,6 @@ class ProcessPayment
 
         return $result;
     }
-
-    
-    public function getCustomerTokenInfo()
-    {
-        $data = array();
-        foreach ($this->getPaymentGateways() as $gateway => $settings) {
-            if (isset($this->customer[$settings['customer_token_field']]) and $this->customer[$settings['customer_token_field']]) {
-                $data[$gateway] = $this->customer[$settings['customer_token_field']];
-            }
-        }
-        return $data;
-    }
-
-    /**
-     * @return array
-     */
-    public static function getPaymentGateways()
-    {
-        return array(
-            'stripe' => array(
-                'name'                 => 'Stripe',
-                'customer_token_field' => 'stripe_customer_id'
-            )
-        );
-    }
    
     /**
      * @param $payment_type
@@ -673,633 +565,6 @@ class ProcessPayment
         return $customer;
     }
 
-    public function make_payment($asaas_api_key, $amount, $currency, $customer_meta_data, $customer, $installment_charge, $installment_count)
-    {	
-
-        $webhook = $this->get_webhook($this->asaas_api_key);
-
-        if ($webhook["url"] !== site_url('hotelipay_callback')) {
-            $create_webhook = $this->create_webhook($this->asaas_api_key);
-        }
-		
-		
- 	$has_options = $this->ci->Asaas_model->getCustomOptions($this->ci->company_id, 'asaas_sale_comission');
-	$asaas_sale_comission = $has_options ? $has_options : 0;
-	
-    if (function_exists('send_payment_request')) {
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/payments';
-        $method_type = 'POST';
-		
-		$split = NULL;
-		
-		if($asaas_sale_comission !== 0){
-		$split = array(
-                    array(
-                        'walletId' => $_SERVER['ASAAS_WALLET_ID'],
-                        //'fixedValue' => 20
-                        'percentualValue' => $asaas_sale_comission
-                    )
-                );
-		}
-
-        if (isset($customer['cc_tokenex_token']) && $customer['cc_tokenex_token']) {
-            $data = array(
-                'customer' => $customer_meta_data['customer_id'],
-                'billingType' => 'CREDIT_CARD',
-                'dueDate' => date("Y-m-d", strtotime("+ 1 day")),
-                'value' => $amount,
-                'creditCardToken' => $customer['cc_tokenex_token']
-            );
-        } else {
-
-            $cpfCnpj_data = $this->getCustomerFields('CPF', $customer['customer_id']);
-
-            // $assas_customer_data = $this->getAssasCustomerDetail($customer_meta_data['customer_id']);
-
-            if(
-                isset($cpfCnpj_data['name']) 
-                && $cpfCnpj_data['name'] == 'CPF'
-                && isset($cpfCnpj_data['value']) 
-                && $cpfCnpj_data['value']
-            ){
-                $cpfCnpj = $cpfCnpj_data['value'];
-            } else {
-                $cpfCnpj = $this->asaas_cpf_cnpj;
-            }
-
-            $data = array(
-                'customer' => $customer_meta_data['customer_id'],
-                'billingType' => 'CREDIT_CARD',
-                'dueDate' => date("Y-m-d", strtotime("+ 1 day")),
-                'value' => $amount,
-                'creditCard' => array(
-                    'holderName' => "%CARDHOLDER_NAME%",
-                    'number' => "%CARD_NUMBER%",
-                    'expiryMonth' => "%EXPIRATION_MM%",
-                    'expiryYear' => "%EXPIRATION_YYYY%",
-                    'ccv' => "%SERVICE_CODE%"
-                ),
-                'creditCardHolderInfo' => array(
-                    'name' => $customer['customer_name'],
-                    'email' => $customer['customer_data']['email'],
-                    'cpfCnpj' => $cpfCnpj,
-                    'postalCode' => $customer['customer_data']['postal_code'],
-                    'addressNumber' => $customer['customer_data']['address'],
-                    'phone' => $customer['customer_data']['phone'],
-                    'address' => $customer['customer_data']['address'],
-                    'city' => $customer['customer_data']['city'],
-                    'state' => $customer['customer_data']['region']
-
-                ),
-                //
-                'split' => $split
-            );
-        }
-
-        if ($installment_charge == 'true') {
-            unset($data['value']);
-            $data['installmentCount'] = $installment_count;
-            $data['totalValue'] = $amount;
-        }
-
-        $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = send_payment_request($api_url . $method, $customer_meta_data['token'], $data, $headers);
-
-        if (isset($response['object']) && $response['object'] == 'payment' && isset($response['id']) && $response['id']) {
-
-            $update_card_data = array(
-                'cc_tokenex_token' => $response['creditCard']['creditCardToken'],
-                'cc_cvc_encrypted' => null
-            );
-            $this->ci->Card_model->update_customer_primary_card($customer['customer_id'], $update_card_data);
-
-            $property_data = $this->ci->Channex_model->get_channex_x_company(null, $this->ci->company_id);
-            $log_data = array(
-                'ota_property_id' => $property_data['ota_property_id'],
-                'request_type' => 5,
-                'response_type' => 0,
-                'xml_in' => json_encode($data),
-                'xml_out' => json_encode($response)
-            );
-            $this->ci->Channex_model->save_logs($log_data);
-
-            return array('success' => true, 'charge_id' => $response['id']);
-        } else if (isset($response['errors']) && $response['errors']) {
-
-            $property_data = $this->ci->Channex_model->get_channex_x_company(null, $this->ci->company_id);
-            $log_data = array(
-                'ota_property_id' => $property_data['ota_property_id'],
-                'request_type' => 5,
-                'response_type' => 1,
-                'xml_in' => json_encode($data),
-                'xml_out' => json_encode($response)
-            );
-            $this->ci->Channex_model->save_logs($log_data);
-
-            return array('success' => false, 'errors' => $response['errors']);
-        }
-    } else {
-        return array('success' => false, 'errors' => 'Tokenization service is not available.');
-    }
-}
-
-    public function refund_payment($asaas_api_key, $amount, $gateway_charge_id){
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/payments/'.$gateway_charge_id.'/refund';
-        $method_type = 'POST';
-
-        $data = array();
-
-        $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-
-        if(isset($response['object']) && $response['object'] == 'payment' && isset($response['id']) && $response['id'] && isset($response['status']) && $response['status'] == 'REFUNDED') {
-
-            return array('success' => true, 'refund_id' => $response['id']);
-        } else if(isset($response['errors']) && $response['errors']) {
-            return array('success' => false, 'message' => $response['errors']);
-        }
-    }
-
-    public function getAccountDetails($asaas_api_key){
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/accounts?limit=100';
-        $method_type = 'GET';
-
-        $data = array();
-
-        $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-        return $response;
-    }
-
-    public function getAssasCustomerDetail($assas_customer_id){
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/customers/'.$assas_customer_id;
-        $method_type = 'GET';
-
-        $data = array();
-
-        $asaas_api_key = '';
-        if(isset($this->asaas_api_key) && $this->asaas_api_key){
-            $asaas_api_key = $this->asaas_api_key;
-        }
-
-        $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-        return $response;
-    }
-
-    public function getCharges($is_status = false){
-
-        $api_url = $this->asaas_url;
-
-        if($is_status)
-            $method = '/api/v3/payments?limit=100&status='.$this->asaas_status;
-        else
-            $method = '/api/v3/payments?limit=100';
-
-        // $method = '/api/v3/payments?billingType=CREDIT_CARD&limit=100';
-        // $method = '/api/v3/payments?limit=100';
-        $method_type = 'GET';
-
-        $asaas_api_key = '';
-        if(isset($this->asaas_api_key) && $this->asaas_api_key){
-            $asaas_api_key = $this->asaas_api_key;
-        }
-
-        $data = array();
-
-        $headers = array(
-            "access_token: " . $asaas_api_key
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-
-        // prx($response);
-        return $response;
-    }
-
-    public function getCurrentBalance(){
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/finance/getCurrentBalance';
-        $method_type = 'GET';
-
-        $asaas_api_key = '';
-        if(isset($this->asaas_api_key) && $this->asaas_api_key){
-            $asaas_api_key = $this->asaas_api_key;
-        }
-	   
-        $data = array();
-
-        $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-
-        // prx($response);
-        return $response;
-    }
-
-    public function send_payment_link($customer_meta_data, $payment_amount, $payment_link_name, $due_date, $installment_charge, $installment_count)
-{
-        $webhook = $this->get_webhook($this->asaas_api_key);
-
-        if ($webhook["url"] !== site_url('hotelipay_callback')) {
-            $create_webhook = $this->create_webhook($this->asaas_api_key);
-        }
-   	$has_options = $this->ci->Asaas_model->getCustomOptions($this->ci->company_id, 'asaas_sale_comission');
-	$asaas_sale_comission = $has_options ? $has_options : 0;
-	
-	$api_url = $this->asaas_url;
-    $method = '/api/v3/payments';
-    $method_type = 'POST';
-	
-	$split = NULL;
-	
-		if($asaas_sale_comission !== 0){
-		$split = array(
-                    array(
-                        'walletId' => $_SERVER['ASAAS_WALLET_ID'],
-                        //'fixedValue' => 20
-                        'percentualValue' => $asaas_sale_comission
-                    )
-                );
-		}
-
-    $data = array(
-	    'customer' => $customer_meta_data['customer_id'],
-        'description' => $payment_link_name,
-        'value' => $payment_amount,
-        'billingType' => 'UNDEFINED',       
-        'dueDate' => date("Y-m-d", strtotime("+ ". $due_date." days")),      
-             'split' => $split
-    );
-
-    if ($installment_charge == 'true') {
-        // unset($data['value']);
-        $data['chargeType'] = 'INSTALLMENT';
-        $data['maxInstallmentCount'] = $installment_count;
-        // $data['totalValue'] = $payment_amount;
-    }
-
-    $headers = array(
-        "access_token: " . $this->asaas_api_key,
-        "Content-Type: application/json"
-    );
-	
-	//var_dump($data);
-//die();
-    $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-    $response = json_decode($response, true);
-    $response['currency'] = $this->currency;
-    return $response;
-}
-
-    function get_customer_name($asaas_customer_id){
-        $this->ci->load->model('../extensions/'.$this->ci->current_payment_gateway.'/models/Customer_model');
-        $customer = $this->ci->Customer_model->get_asaas_customer($asaas_customer_id);
-        return $customer;
-    }
-
-    function get_booking($asaas_payment_id){
-        $this->ci->load->model('../extensions/'.$this->ci->current_payment_gateway.'/models/Asaas_model');
-        $booking = $this->ci->Asaas_model->get_booking_details($asaas_payment_id);
-        return $booking;
-    }
-
-    function cr($customer_data){
-        $customer = new CustomerEntity();
-        $customer->name = $customer_data['customer_name'];
-        $customer->email = isset($customer_data['email']) && $customer_data['email'] ? $customer_data['email'] : '';
-
-        $customer->cpfCnpj = '85267610054';
-
-        $customerCreated = $customer->create();
-
-        $customer_repsonse = json_decode(json_encode($customerCreated, true), true);
-
-        return array('success' => true, 'customer_id' => $customer_repsonse['id']);
-        
-    }
-	
-	
-	   function get_customer($asaas_api_key,  $customer_email){
-
-       $data = [];
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/customers?email='. $customer_email;
-        $method_type = 'GET';
-		  $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-		
-        $response = json_decode($response, true);
-		//var_dump($response);
-		//die();
-		
-		if($response["totalCount"] == 0) {
-		 $create_customer = $this->create_customer(['customer_name' => $customer_email, 'email' => $customer_email]);	
-		 
-		 return $create_customer['customer_id'];
-		} else {		
-        return $response['data'][0]['id'];
-		}
- }
-	
-	
-// return account wallet_id
-   function asaas_wallets($asaas_api_key){
-
-$data = [];
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/wallets';
-        $method_type = 'GET';
-		  $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
- return $response;
-
-//die();
- }
- // new 
-   function excerpt(){     
-	 $data = [];
-	 // TODO: add filters
-	     $asaas_api_key = '';
-        if (isset($this->asaas_api_key) && $this->asaas_api_key) {
-            $asaas_api_key = $this->asaas_api_key;
-        }
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/financialTransactions';
-        $method_type = 'GET';
-		  $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
- return $response;
-         }
- 
-    function create_asaas_account($account_data, $company_id, $asaas_api_key){
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/accounts';
-        $method_type = 'POST';
-
-$asaas_api_key = getenv("ASAAS_API_KEY") ? getenv("ASAAS_API_KEY") : $_SERVER["ASAAS_API_KEY"];
-
-        $data = array(
-                        'name' => $account_data['account_name'],
-                        'email' => $account_data['account_email'],
-                        'cpfCnpj' => $account_data['cpf_cnpj'],
-                        'companyType' => $account_data['company_type'],
-                        'phone' => $account_data['phone'],
-                        'mobilePhone' => $account_data['mobile_phone'],
-                        'address' => $account_data['address'],
-                        'addressNumber' => $account_data['address_number'],
-                        'province' => $account_data['province'],
-                        'postalCode' => $account_data['postal_code']
-                    );
-
-        $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-
-        if(isset($response['object']) && $response['object'] == 'account' && isset($response['apiKey']) && $response['apiKey']) {
-
-            $meta = array("asaas" => 
-                        array(
-                            'asaas_api_key' => $response['apiKey'],
-                            'asaas_wallet_id' => $response['walletId'],
-                            'cpf_cnpj' => $response['cpfCnpj']
-                        )
-                    );
-
-            $meta_data = $this->ci->Payment_gateway_model->get_payment_gateway_settings($this->ci->company_id);
-
-            if(isset($meta_data['gateway_meta_data']) && $meta_data['gateway_meta_data']){
-                $meta_data = json_decode($meta_data['gateway_meta_data'], true);
-
-                $meta = array_merge($meta, $meta_data);
-            }
-
-            $update_data['gateway_meta_data'] = json_encode($meta);
-
-            $update_data['company_id'] = $company_id;
-            $update_data['selected_payment_gateway'] = 'asaas';
-            $this->ci->Payment_gateway_model->update_payment_gateway_settings($update_data);
-
-            return array('success' => true, 'asaas_api_key' => $response['apiKey'], 'asaas_wallet_id' => $response['walletId']);
-        } else if(isset($response['errors']) && $response['errors']) {
-            return array('success' => false, 'errors' => $response['errors']);
-        }
-    }
-
-    // function withdrawal_amount($withdrawal_data, $company_id, $asaas_api_key){
-    function withdrawal_amount($withdrawal_data, $company_id){
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/transfers';
-        $method_type = 'POST';
-
-        $data = array(
-                        'value' => number_format($withdrawal_data['amount'], 2, ".", ","),
-                        'bankAccount' => array(
-                                        'bank' => array(
-                                                        'code' => $withdrawal_data['bank_code']
-                                                    ),
-                                        
-                                        'cpfCnpj' => $withdrawal_data['cpf_cnpj'],
-                                        'ownerName' => $withdrawal_data['owner_name'],
-                                        'agency' => $withdrawal_data['agency'],
-                                        'account' => $withdrawal_data['bank_account_number'],
-                                        'accountDigit' => $withdrawal_data['bank_account_digit'],
-                                        'bankAccountType' => $withdrawal_data['account_type']
-                                    )
-                    );
-
-        $asaas_api_key = '';
-        if(isset($this->asaas_api_key) && $this->asaas_api_key){
-            $asaas_api_key = $this->asaas_api_key;
-        }
- 
-        $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-
-   
-        if(isset($response['object']) && $response['object'] == 'transfer' && isset($response['id']) && $response['id']) {
-
-            $this->ci->load->model('../extensions/'.$this->ci->current_payment_gateway.'/models/Asaas_model');
-
-            $withdrawal_data['company_id'] = $company_id;
-            $withdrawal_data['transfer_id'] = $response['id'];
-            $withdrawal_data['transfer_status'] = $response['status'];
-            $withdrawal_data['created_date'] = date('Y-m-d H:i:s');
-            
-            $hoteli_pay_bank_details = $this->ci->Asaas_model->get_hoteli_pay_bank_details($company_id);
-            if(isset($hoteli_pay_bank_details) && count($hoteli_pay_bank_details) > 0){
-                $this->ci->Asaas_model->save_hoteli_pay_bank_details($withdrawal_data);
-            } else {
-                $this->ci->Asaas_model->update_hoteli_pay_bank_details($withdrawal_data);
-            }
-
-            return array('success' => true, 'transfer_id' => $response['id']);
-        } 
-        else if(isset($response['errors']) && $response['errors']) {
-            return array('success' => false, 'errors' => $response['errors']);
-        }
-    }
-
-    function delete_payment($payment){
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/payments/'.$payment['payment_link_id'];
-        $method_type = 'delete';
-
-        $data = array();
-
-        $headers = array(
-            "access_token: " . $this->asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-        return $response;
-    }
-	
-	
-    function get_webhook($asaas_api_key)
-    {
-        $api_url = $this->asaas_url;
-        $method =  "/api/v3/webhook";
-        $method_type = 'GET';
-
-        $data = array();
-
-        $asaas_api_key = $asaas_api_key ? $asaas_api_key : $this->asaas_api_key;
-
-        $headers = array(
-            "access_token: " . $asaas_api_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-        return $response;
-    }
-
-    function create_webhook($asaas_key)
-    {
-        $data = [
-            "url" => site_url('hotelipay_callback'),
-            "email" => "contato@hoteli.com.br",
-            "interrupted" => false,
-            "enabled" => true,
-            "apiVersion" => "3",
-            "authToken" => ""
-        ];
-        $api_url = $this->asaas_url;
-        $method =  "/api/v3/webhook";
-        $method_type = 'POST';
-
-        $headers = array(
-            "access_token: " . $asaas_key,
-            "Content-Type: application/json"
-        );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-        $response = json_decode($response, true);
-		return  $response;        
-    }
- public function get_company($company_id, $get_last_actio = 0)
- {
- $company = $this->ci->company_model->get_company($company_id, array("get_last_action" => (boolean) $get_last_action)); 
- }
-
-    function asaas_customers(){
-
-        $data = [];
-        // TODO: add filters
-        $asaas_api_key = '';
-        if (isset($this->asaas_api_key) && $this->asaas_api_key) {
-            $asaas_api_key = $this->asaas_api_key;
-        }
-
-        $api_url = $this->asaas_url;
-        $method = '/api/v3/customers';
-        $method_type = 'GET';
-            $headers = array(
-                "access_token: " . $asaas_api_key,
-                "Content-Type: application/json"
-            );
-
-        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
-
-        $response = json_decode($response, true);
-        return $response;
-    }
- 
     public function call_api($api_url, $method, $data, $headers, $method_type = 'POST'){
 
         $url = $api_url . $method;
