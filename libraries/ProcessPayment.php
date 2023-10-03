@@ -266,19 +266,19 @@ class ProcessPayment
         }
             
         $customer      = json_decode(json_encode($customer), 1);
-        $hasExternalId = (isset($customer[$this->getExternalEntityField()]) and $customer[$this->getExternalEntityField()]);
         $customer_meta_data = json_decode($customer['customer_meta_data'], true);
-        $hasTokenexToken = (isset($customer_meta_data['cielo_token']) and $customer_meta_data['cielo_token']);
+        $hasTokenexToken = (isset($customer_meta_data['cielo_card_token']) and $customer_meta_data['cielo_card_token']);
 
         if(!$hasTokenexToken) {
 
             $customer['token'] = $customer_meta_data['token'];
             
-            $create_customer_response = $this->create_card_token($customer);
+            $card_toknization_response = $this->create_card_token($customer);
 
-            $meta['customer_id'] = isset($create_customer_response['success']) && $create_customer_response['success'] && isset($create_customer_response['customer_id']) && $create_customer_response['customer_id'] ? $create_customer_response['customer_id'] : null;
+            $meta['cielo_card_token'] = isset($card_toknization_response['success']) && $card_toknization_response['success'] && isset($card_toknization_response['card_token']) && $card_toknization_response['card_token'] ? $card_toknization_response['card_token'] : null;
 
             $meta['token'] = isset($customer_meta_data['token']) && $customer_meta_data['token'] ? $customer_meta_data['token'] : '';
+            $meta['card_type'] = isset($customer_meta_data['card_type']) && $customer_meta_data['card_type'] ? $customer_meta_data['card_type'] : '';
 
             $card_details['customer_meta_data'] = json_encode($meta);
 
@@ -306,15 +306,14 @@ class ProcessPayment
             }
                 
             $customer      = json_decode(json_encode($customer), 1);
-            $hasExternalId = (isset($customer[$this->getExternalEntityField()]) and $customer[$this->getExternalEntityField()]);
             $customer_meta_data = json_decode($customer['customer_meta_data'], true);
-            $hasTokenexToken = (isset($customer_meta_data['customer_id']) and $customer_meta_data['customer_id']);
+            $hasTokenexToken = (isset($customer_meta_data['cielo_card_token']) and $customer_meta_data['cielo_card_token']);
         }
 
         if (
             $this->areGatewayCredentialsFilled()
             and $customer
-            and ($hasExternalId or $hasTokenexToken)
+            and $hasTokenexToken
         ) {
             $result = true;
         }
@@ -324,17 +323,20 @@ class ProcessPayment
 
     function create_card_token($customer_data){
 
+
         if (function_exists('send_payment_request')) {
             $api_url = $this->cielo_url;
             $method = '/1/card/';
             $method_type = 'POST';
 
+            $customer_meta_data = json_decode($customer_data['customer_meta_data'], true);
+
             $data = array(
                 'CustomerName' => $customer_data['customer_name'],
                 'CardNumber' => "%CARD_NUMBER%",
                 'Holder' => "%CARDHOLDER_NAME%",
-                'ExpirationDate' => "%EXPIRATION_MM% / %EXPIRATION_YYYY%",
-                'Brand' => "%EXPIRATION_YYYY%"
+                'ExpirationDate' => "%EXPIRATION_MM%" .'/'. "%EXPIRATION_YYYY%",
+                'Brand' => ucfirst($customer_meta_data['card_type'])
             );
 
             $headers = array(
@@ -345,26 +347,14 @@ class ProcessPayment
         }
 
         $response = send_payment_request($api_url . $method, $customer_data['token'], $data, $headers);
-        prx($response);
-        $customer_repsonse = json_decode(json_encode($customerCreated, true), true);
+        // echo "resp =>";prx($response);
 
-        return array('success' => true, 'customer_id' => $customer_repsonse['id']);
-        
-    }
-
-    /**
-     * @return string
-     */
-    public function getExternalEntityField()
-    {
-        $name = '';
-        switch ($this->selected_gateway) {
-            case 'stripe':
-                $name = 'stripe_customer_id';
-                break;
+        if(
+            isset($response['CardToken']) && 
+            $response['CardToken']
+        ) {
+            return array('success' => true, 'card_token' => $response['CardToken']);
         }
-
-        return $name;
     }
 
     /**
@@ -504,7 +494,7 @@ class ProcessPayment
      */
     public function getPaymentGatewayPaymentType($payment_type, $company_id = null)
     {
-        $payment_type = 'hoteli.pay';
+        $payment_type = 'cielo';
         $settings   = $this->getCompanyGatewaySettings();
         $company_id = $company_id ?: $settings['company_id'];
 

@@ -25,6 +25,5 @@ $lang['cielo-payment-integration']["Can't delete the Payment Link as it's been a
 $lang['cielo-payment-integration']['Add Payment'] = 'Add Payment';
 $lang['cielo-payment-integration']['Use Payment Gateway'] = 'Use Payment Gateway';
 $lang['cielo-payment-integration']['Update'] = 'Update';
-$lang['cielo-payment-integration']['Update'] = 'Update';
 
 ?>
