@@ -162,7 +162,7 @@ class ProcessPayment
      * @param $amount
      * @return bool
      */
-    public function createBookingCharge($booking_id, $amount, $customer_id = null, $installment_charge, $installment_count)
+    public function createBookingCharge($booking_id, $amount, $customer_id = null)
     {
         $charge_id = null;
 
@@ -196,11 +196,12 @@ class ProcessPayment
 
                 $customer_meta_data = json_decode($customer['customer_meta_data'], true);
                
-                if(isset($customer_meta_data['customer_id']) && $customer_meta_data['customer_id'])
+                if(isset($customer_meta_data['token']) && $customer_meta_data['token'])
                 {
-                    $asaas_api_key = $this->asaas_api_key;
+                    $cielo_merchant_id = $this->cielo_merchant_id;
+                    $cielo_merchant_key = $this->cielo_merchant_key;
                     // use tokenex for payments
-                    $charge = $this->make_payment($asaas_api_key, $amount, $this->currency, $customer_meta_data, $customer, $installment_charge, $installment_count);
+                    $charge = $this->make_payment($cielo_merchant_id, $cielo_merchant_key, $booking_id, $amount, $this->currency, $customer_meta_data, $customer);
 
                     $charge_id = null;
                     if($charge['success'])
@@ -227,6 +228,112 @@ class ProcessPayment
         }
 
         return $charge_id;
+    }
+
+    public function make_payment($cielo_merchant_id, $cielo_merchant_key, $booking_id, $amount, $currency, $customer_meta_data, $customer)
+    {   
+        if (function_exists('send_payment_request')) {
+            $api_url = $this->cielo_url;
+            $method = '/1/sales/';
+            $method_type = 'POST';
+
+            if (
+                isset($customer_meta_data['cielo_card_token']) && 
+                $customer_meta_data['cielo_card_token']
+            ) {
+                $data = array(
+                    'MerchantOrderId' => $booking_id,
+                    'Payment' => array(
+                        'Installments' => 1,
+                        'Amount' => $amount,
+                        'Type' => "CreditCard",
+                        'Capture' => true,
+                        'CreditCard' => array(
+                            'CardToken' => $customer_meta_data['cielo_card_token'],
+                            'Brand' => ucfirst($customer_meta_data['card_type'])
+                        )
+                    )
+                );
+            }
+            else 
+            {
+                $data = array(
+                    'MerchantOrderId' => $booking_id,
+                    'Payment' => array(
+                        'Installments' => 1,
+                        'Amount' => $amount,
+                        'Type' => "CreditCard",
+                        'Capture' => true,
+                        'CreditCard' => array(
+                            'CardNumber' => "%CARD_NUMBER%",
+                            'ExpirationDate' => "%EXPIRATION_MM%" .'/'. "%EXPIRATION_YYYY%",
+                            'Brand' => ucfirst($customer_meta_data['card_type'])
+                        )
+                    )
+                );
+            }
+
+            $headers = array(
+                "MerchantId: " . $this->cielo_merchant_id,
+                "MerchantKey: " . $this->cielo_merchant_key,
+                "Content-Type: application/json"
+            );
+
+            $response = $this->call_api($api_url, $method, $data, $headers);
+
+            $response = json_decode($response, true);
+
+            if (
+                isset($response['Payment']['ReturnCode']) && 
+                (
+                    $response['Payment']['ReturnCode'] == '6' ||
+                    $response['Payment']['ReturnCode'] == '4'
+                ) && 
+                isset($response['Payment']['Status']) && 
+                $response['Payment']['Status'] == 2) {
+
+                return array('success' => true, 'charge_id' => $response['Payment']['PaymentId']);
+            } else if (
+                isset($response['Payment']['ReturnCode']) && 
+                $response['Payment']['ReturnCode'] == '05' && 
+                isset($response['Payment']['Status']) && 
+                $response['Payment']['Status'] == 2) {
+                
+                return array('success' => false, 'errors' => $response['Payment']['ReturnMessage']);
+            }
+
+            // prx($response);
+        }
+    }
+
+    function get_credit_card_type($cardNumber)
+    {
+        // Remove non-digits from the number
+        $cardNumber = preg_replace('/\D/', '', $cardNumber);
+
+        // Validate the length
+        $len = strlen($cardNumber);
+        if ($len < 15 || $len > 16) {
+            throw new Exception("Invalid credit card number. Length does not match");
+        } else {
+            switch ($cardNumber) {
+                case (preg_match('/^4/', $cardNumber) >= 1):
+                    return 'Visa';
+                case (preg_match('/^5[1-5]/', $cardNumber) >= 1):
+                    return 'Master';
+                case (preg_match('/^3[47]/', $cardNumber) >= 1):
+                    return 'Amex';
+                case (preg_match('/^3(?:0[0-5]|[68])/', $cardNumber) >= 1):
+                    return 'Diners';
+                case (preg_match('/^6(?:011|5)/', $cardNumber) >= 1):
+                    return 'Discover';
+                case (preg_match('/^(?:2131|1800|35\d{3})/', $cardNumber) >= 1):
+                    return 'JCB';
+                default:
+                    throw new Exception("Could not determine the credit card type.");
+                    break;
+            }
+        }
     }
 
     /**
