@@ -231,10 +231,31 @@ cielo_payment_button.on('click',function(){
                                 '</div>'+
                             '</div>'+
                             '<div class="form-group payment_link_div">'+
-                                '<label for="due_date" class="col-sm-4 control-label">'+
-                                    '<span alt="due_date" title="amount">'+l('cielo-payment-integration/Due date limit days')+'</span></label>'+
+                                '<label for="shipping_name" class="col-sm-4 control-label">'+
+                                    '<span alt="shipping_name" title="amount">'+l('cielo-payment-integration/Shipping Name')+'</span></label>'+
                                 '<div class="col-sm-8">'+
-                                    '<input type="text" class="form-control" name="due_date" placeholder="'+l("cielo-payment-integration/Enter days of due date")+'">'+
+                                    '<input type="text" class="form-control" name="shipping_name" placeholder="'+l("cielo-payment-integration/Enter shipping name")+'">'+
+                                '</div>'+
+                            '</div>'+
+                            '<div class="form-group payment_link_div">'+
+                                '<label for="shipping_price" class="col-sm-4 control-label">'+
+                                    '<span alt="shipping_price" title="amount">'+l('cielo-payment-integration/Shipping Price')+'</span></label>'+
+                                '<div class="col-sm-8">'+
+                                    '<input type="text" class="form-control" name="shipping_price" placeholder="'+l("cielo-payment-integration/Enter shipping price")+'">'+
+                                '</div>'+
+                            '</div>'+
+                            '<div class="form-group payment_link_div">'+
+                                '<label for="shipping_type" class="col-sm-4 control-label">'+
+                                    '<span alt="shipping_type" title="amount">'+l('cielo-payment-integration/Shipping Type')+'</span></label>'+
+                                '<div class="col-sm-8">'+
+                                    '<select class="form-control" name="shipping_type">'+
+                                        '<option value="">'+l('cielo-payment-integration/-- Shipping Type --')+'</option>'+
+                                        '<option value="Post Office">Delivery by post</option>'+
+                                        '<option value="FixedAmount">Fixed Value</option>'+
+                                        '<option value="Free">Free</option>'+
+                                        '<option value="WithoutShippingPickUp">No delivery with in-store pickup</option>'+
+                                        '<option value="WithoutShipping">No delivery</option>'+
+                                    '</select>'+
                                 '</div>'+
                             '</div>';
 
@@ -268,43 +289,51 @@ $(".send_payment_link").prop("disabled", false);
 $("body").on("click", ".send_payment_link", function () {
 
     var payment_link_name = $("input[name='payment_link_name']").val();
-    var payment_due_date = $("input[name='due_date']").val();
+    var payment_shipping_name = $("input[name='shipping_name']").val();
+    var payment_shipping_price = $("input[name='shipping_price']").val();
+    var payment_shipping_type = $("select[name='shipping_type']").val();
 
     if(payment_link_name == ''){
         alert(l('cielo-payment-integration/Please enter payment link name', true));
-    } else if(payment_due_date == ''){
-        alert(l('cielo-payment-integration/Please enter payment due days', true));
-    } else if(payment_due_date <= 0){
-        alert(l('cielo-payment-integration/Please enter valid due days', true));
-    } else{
+    } else if(payment_shipping_name == ''){
+        alert(l('cielo-payment-integration/Please enter shipping name', true));
+    } else if(payment_shipping_price == ''){
+        alert(l('cielo-payment-integration/Please enter shipping price', true));
+    } else if(payment_shipping_price <= 0){
+        alert(l('cielo-payment-integration/Please enter valid shipping price', true));
+    } else if(payment_shipping_type == ''){
+        alert(l('cielo-payment-integration/Please select the shipping type', true));
+    } else {
 
-        if($('input[name="installment_charge"]').is(":checked") == true){
-            var installment_charge = true;
-            var installment_count = $('select[name="installment_count"]').val();
-        }
-        else {
-            var installment_charge = false;
-            var installment_count = 0;
-        }
+        // if($('input[name="installment_charge"]').is(":checked") == true){
+        //     var installment_charge = true;
+        //     var installment_count = $('select[name="installment_count"]').val();
+        // }
+        // else {
+        //     var installment_charge = false;
+        //     var installment_count = 0;
+        // }
 
         $(this).html("Processing. . .");
         $(this).prop("disabled", true);
         
         $.ajax({
-            url    : getBaseURL() + 'send_payment_link',
+            url    : getBaseURL() + 'send_cielo_payment_link',
             method : 'post',
             dataType: 'json',
             data   : {
-                payment_link_name: $("input[name='payment_link_name']").val(),
-                due_date: $("input[name='due_date']").val(),
+                payment_link_name: payment_link_name,
+                shipping_name: payment_shipping_name,
+                shipping_price: payment_shipping_price,
+                shipping_type: payment_shipping_type,
                 payment_amount: $("input[name='payment_amount']").val(),
                 booking_id      : $("#booking_id").val(),
                 payment_date    : innGrid._getBaseFormattedDate($("input[name='payment_date']").val()),
                 payment_type_id : $("select[name='payment_type_id']").val(),
                 customer_id     : $("select[name='customer_id']").val(),
                 payment_amount  : $("input[name='payment_amount']").val(),
-                installment_charge  : installment_charge,
-                installment_count  : installment_count
+                // installment_charge  : installment_charge,
+                // installment_count  : installment_count
             },
             success: function (resp) { 
                 console.log('resp',resp);
@@ -354,7 +383,7 @@ $('body').on('click', '.verify_payment', function(){
     $(this).prop("disabled", true);
 
     $.ajax({
-            url    : getBaseURL() + 'verify_payment',
+            url    : getBaseURL() + 'verify_cielo_payment',
             method : 'post',
             dataType: 'json',
             data   : {
@@ -480,7 +509,7 @@ function deletePaymentRow(item, e){
                         alert(l("cielo-payment-integration/Can't delete the Payment Link as it's been already paid. Please refund instead"));
                     
                         $.ajax({
-                            url    : getBaseURL() + 'verify_payment',
+                            url    : getBaseURL() + 'verify_cielo_payment',
                             method : 'post',
                             dataType: 'json',
                             data   : {

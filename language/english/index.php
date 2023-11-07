@@ -2,6 +2,8 @@
 
 $lang['cielo-payment-integration']['Merchant ID'] = 'Merchant ID';
 $lang['cielo-payment-integration']['Merchant Key'] = 'Merchant Key';
+$lang['cielo-payment-integration']['Client ID'] = 'Client ID';
+$lang['cielo-payment-integration']['Client Secret'] = 'Client Secret';
 $lang['cielo-payment-integration']['Please fill all fields'] = 'Please fill all fields';
 $lang['cielo-payment-integration']['Settings updated'] = 'Settings updated';
 $lang['cielo-payment-integration']['payment gateway settings'] = 'payment gateway settings';
@@ -16,8 +18,11 @@ $lang['cielo-payment-integration']['Enter name of payment link'] = 'Enter name o
 $lang['cielo-payment-integration']['Due date limit days'] = 'Due date limit days';
 $lang['cielo-payment-integration']['Enter days of due date'] = 'Enter days of due date';
 $lang['cielo-payment-integration']['Please enter payment link name'] = 'Please enter payment link name';
-$lang['cielo-payment-integration']['Please enter payment due days'] = 'Please enter payment due days';
-$lang['cielo-payment-integration']['Please enter valid due days'] = 'Please enter valid due days';
+$lang['cielo-payment-integration']['Please enter shipping name'] = 'Please enter shipping name';
+$lang['cielo-payment-integration']['Please enter shipping price'] = 'Please enter shipping price';
+$lang['cielo-payment-integration']['Please enter shipping type'] = 'Please enter shipping type';
+$lang['cielo-payment-integration']['Please enter valid shipping type'] = 'Please enter valid shipping type';
+$lang['cielo-payment-integration']['Please select the shipping type'] = 'Please select the shipping type';
 $lang['cielo-payment-integration']['Payment Link has been created successfully. Please copy this URL to pay'] = 'Payment Link has been created successfully. Please copy this URL to pay';
 $lang['cielo-payment-integration']['Number of Installments'] = 'Number of Installments';
 $lang['cielo-payment-integration']['Delete this payment permanently'] = 'Delete this payment permanently';
@@ -25,5 +30,12 @@ $lang['cielo-payment-integration']["Can't delete the Payment Link as it's been a
 $lang['cielo-payment-integration']['Add Payment'] = 'Add Payment';
 $lang['cielo-payment-integration']['Use Payment Gateway'] = 'Use Payment Gateway';
 $lang['cielo-payment-integration']['Update'] = 'Update';
+$lang['cielo-payment-integration']['Shipping Name'] = 'Shipping Name';
+$lang['cielo-payment-integration']['Shipping Price'] = 'Shipping Price';
+$lang['cielo-payment-integration']['Shipping Type'] = 'Shipping Type';
+$lang['cielo-payment-integration']['Enter shipping name'] = 'Enter shipping name';
+$lang['cielo-payment-integration']['Enter shipping price'] = 'Enter shipping price';
+$lang['cielo-payment-integration']['-- Shipping Type --'] = '-- Shipping Type --';
+$lang['cielo-payment-integration']['Payment not done yet'] = 'Payment not done yet';
 
 ?>

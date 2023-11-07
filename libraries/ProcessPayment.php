@@ -73,6 +73,8 @@ class ProcessPayment
         }
         
         $this->cielo_url = ($this->ci->config->item('app_environment') == "development") ? "https://apisandbox.cieloecommerce.cielo.com.br" : "https://api.cieloecommerce.cielo.com.br";
+        
+        $this->cielo_pay_link_url = ($this->ci->config->item('app_environment') == "development") ? "https://cieloecommerce.cielo.com.br" : "https://cieloecommerce.cielo.com.br";
 
         $gateway_settings = $this->ci->Payment_gateway_model->get_payment_gateway_settings(
             $company_id
@@ -94,6 +96,8 @@ class ProcessPayment
                 $gateway_meta_data = json_decode($this->company_gateway_settings['gateway_meta_data'], true);
                 $this->cielo_merchant_id = $gateway_meta_data['cielo_merchant_id'];
                 $this->cielo_merchant_key = $gateway_meta_data['cielo_merchant_key'];
+                $this->cielo_client_id = $gateway_meta_data['cielo_client_id'];
+                $this->cielo_client_secret = $gateway_meta_data['cielo_client_secret'];
                 // if($this->asaas_api_key)
                 //     Client::connect($this->asaas_api_key, $this->asaas_env);
                 break;
@@ -430,7 +434,6 @@ class ProcessPayment
 
     function create_card_token($customer_data){
 
-
         if (function_exists('send_payment_request')) {
             $api_url = $this->cielo_url;
             $method = '/1/card/';
@@ -509,7 +512,9 @@ class ProcessPayment
 
         $credentials['payment_gateway'] = array(
             'cielo_merchant_id' => isset($meta_data["cielo_merchant_id"]) ? $meta_data["cielo_merchant_id"] : "",
-            'cielo_merchant_key' => isset($meta_data["cielo_merchant_key"]) ? $meta_data["cielo_merchant_key"] : ""
+            'cielo_merchant_key' => isset($meta_data["cielo_merchant_key"]) ? $meta_data["cielo_merchant_key"] : "",
+            'cielo_client_id' => isset($meta_data["cielo_client_id"]) ? $meta_data["cielo_client_id"] : "",
+            'cielo_client_secret' => isset($meta_data["cielo_client_secret"]) ? $meta_data["cielo_client_secret"] : ""
         );
 
         $result                                = $credentials;
@@ -656,10 +661,98 @@ class ProcessPayment
         return $this->ci->db->insert_id();
     }
     
-    function getCustomerFields($field_name, $customer_id){
-        $this->ci->load->model('../extensions/'.$this->ci->current_payment_gateway.'/models/Customer_model');
-        $customer = $this->ci->Customer_model->get_customer_field_by_name($customer_id, $field_name);
-        return $customer;
+    public function send_payment_link($payment_amount, $payment_link_name, $shipping_name, $shipping_price, $shipping_type)
+    {
+        $api_url = $this->cielo_pay_link_url;
+        $method = '/api/public/v1/products';
+        $method_type = 'POST';
+
+        $data = array(
+            'type' => 'Digital',
+            'name' => $payment_link_name,
+            'price' => $payment_amount,
+            'shipping' => array(
+                'type' => $shipping_type,
+                'name' => $shipping_name,
+                'price' => $shipping_price
+            )
+        );
+
+        // get access token
+        $access_token = "";
+        $access_token_resp = $this->get_access_token();
+
+        if(
+            isset($access_token_resp['access_token']) && 
+            $access_token_resp['access_token']
+        ) {
+            $access_token = $access_token_resp['access_token'];
+        }
+
+        $headers = array(
+            "Authorization: Bearer " . $access_token,
+            "Content-Type: application/json"
+        );
+    
+        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
+
+        $response = json_decode($response, true);
+        // prx($response);
+        return $response;
+    }
+
+    public function verify_cielo_payment($payment_link_id, $payment_id)
+    {
+        $api_url = $this->cielo_pay_link_url;
+        $method = '/api/public/v1/products/'.$payment_link_id.'/payments';
+        $method_type = 'GET';
+
+        $data = array();
+
+        // get access token
+        $access_token = "";
+        $access_token_resp = $this->get_access_token();
+
+        if(
+            isset($access_token_resp['access_token']) && 
+            $access_token_resp['access_token']
+        ) {
+            $access_token = $access_token_resp['access_token'];
+        }
+
+        $headers = array(
+            "Authorization: Bearer " . $access_token
+        );
+    
+        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
+
+        $response = json_decode($response, true);
+        // prx($response);
+        return $response;
+    }
+
+    function get_access_token(){
+        $api_url = $this->cielo_pay_link_url;
+        $method = '/api/public/v2/token';
+        $method_type = 'POST';
+
+        $data = array();
+
+        $cielo_client_id = $this->cielo_client_id;
+        $cielo_client_secret = $this->cielo_client_secret;
+
+        $base_64_encode_key = base64_encode($this->cielo_client_id.':'.$this->cielo_client_secret);
+
+        $headers = array(
+            "Authorization: Basic " . $base_64_encode_key,
+            "Content-Type: application/x-www-form-urlencoded"
+        );
+    
+        $response = $this->call_api($api_url, $method, $data, $headers, $method_type);
+
+        $response = json_decode($response, true);
+        // prx($response);
+        return $response;
     }
 
     public function call_api($api_url, $method, $data, $headers, $method_type = 'POST'){
@@ -673,6 +766,9 @@ class ProcessPayment
 
         } else if($method_type == 'delete'){
             curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+        } else if($method_type == 'PUT'){
+            curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "PUT");
+            curl_setopt($curl, CURLOPT_POSTFIELDS,http_build_query($data));
         } else {
             curl_setopt($curl, CURLOPT_POST, 1);
             curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($data));
@@ -682,10 +778,9 @@ class ProcessPayment
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
         curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0);
-        $response = curl_exec($curl);
-        
+        $response = curl_exec($curl);        
+
         curl_close($curl);
-        
         return $response;
     }
 }

@@ -4,14 +4,18 @@ innGrid.ajaxCache = innGrid.ajaxCache || {};
 innGrid._getCieloForm = function() {
     return $("<div/>", {})
         .append(innGrid._getHorizontalInput(l('cielo-payment-integration/Merchant ID'), "cielo_merchant_id", settings.payment_gateway.cielo_merchant_id))
-        .append(innGrid._getHorizontalInput(l('cielo-payment-integration/Merchant Key'), "cielo_merchant_key", settings.payment_gateway.cielo_merchant_key));
+        .append(innGrid._getHorizontalInput(l('cielo-payment-integration/Merchant Key'), "cielo_merchant_key", settings.payment_gateway.cielo_merchant_key))
+        .append(innGrid._getHorizontalInput(l('cielo-payment-integration/Client ID'), "cielo_client_id", settings.payment_gateway.cielo_client_id))
+        .append(innGrid._getHorizontalInput(l('cielo-payment-integration/Client Secret'), "cielo_client_secret", settings.payment_gateway.cielo_client_secret));
 };
 
 innGrid._getHorizontalInput = function (label, name, value)
 {
     if( 
             name == 'cielo_merchant_id' || 
-            name == 'cielo_merchant_key'
+            name == 'cielo_merchant_key' || 
+            name == 'cielo_client_id' || 
+            name == 'cielo_client_secret'
         )
     {
         var sensitiveData = '<a title = "Show '+label+'" class="show_password" href="javascript:"><i class="fa fa-eye" ></i></a>';
@@ -140,7 +144,12 @@ $(function (){
                 valid = true;
                 break;
             case 'cielo':
-                if (fields['cielo_merchant_id'] != '' && fields['cielo_merchant_key'] != '') {
+                if (
+                    fields['cielo_merchant_id'] != '' && 
+                    fields['cielo_merchant_key'] != '' && 
+                    fields['cielo_client_id'] != '' && 
+                    fields['cielo_client_secret'] != ''
+                    ) {
                     valid = true;
                 } else {
                     alert(l('cielo-payment-integration/Please fill all fields'));
